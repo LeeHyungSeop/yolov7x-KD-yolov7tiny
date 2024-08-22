@@ -85,12 +85,25 @@ def train(hyp, opt, device, tb_writer=None):
         with torch_distributed_zero_first(rank):
             attempt_download(weights)  # download if not found locally
         ckpt = torch.load(weights, map_location=device)  # load checkpoint
-        model = Model(opt.cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+
+        # 2024.08.22 @hslee : load model from checkpoint
+
+        # teacher model (v7x)
+        print(f"opt.cfg : {opt.cfg}")
+        print(f"ckpt['teacher'] : {ckpt['teacher']}")
+
+        teacher = Model(opt.cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
         exclude = ['anchor'] if (opt.cfg or hyp.get('anchors')) and not opt.resume else []  # exclude keys
         state_dict = ckpt['model'].float().state_dict()  # to FP32
-        state_dict = intersect_dicts(state_dict, model.state_dict(), exclude=exclude)  # intersect
-        model.load_state_dict(state_dict, strict=False)  # load
-        logger.info('Transferred %g/%g items from %s' % (len(state_dict), len(model.state_dict()), weights))  # report
+        state_dict = intersect_dicts(state_dict, teacher.state_dict(), exclude=exclude)  # intersect
+        teacher.load_state_dict(state_dict, strict=False)  # load
+        logger.info('Transferred %g/%g items from %s' % (len(state_dict), len(teacher.state_dict()), weights))  # report
+    
+        # student model
+        student = Model(opt.cfg or ckpt['student'], ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+
+
+    
     else:
         model = Model(opt.cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
     with torch_distributed_zero_first(rank):
@@ -526,8 +539,16 @@ def train(hyp, opt, device, tb_writer=None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+
     parser.add_argument('--weights', type=str, default='yolo7.pt', help='initial weights path')
     parser.add_argument('--cfg', type=str, default='', help='model.yaml path')
+
+    # 2024.08.22 @hslee : add teacher and student model arguments
+    parser.add_argument('--teacher-weights', type=str, default='yolov7x.pt', help='teacher weights path')
+    parser.add_argument('--student-weights', type=str, default='yolov7-tiny.pt', help='student weights path')
+    parser.add_argument('--teacher-cfg', type=str, default='cfg/training/yolov7x.yaml', help='teacher.yaml path')
+    parser.add_argument('--student-cfg', type=str, default='cfg/training/yolov7-tiny.yaml', help='student.yaml path')
+
     parser.add_argument('--data', type=str, default='data/coco.yaml', help='data.yaml path')
     parser.add_argument('--hyp', type=str, default='data/hyp.scratch.p5.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)
@@ -721,6 +742,18 @@ python train.py --workers 4 --device 0 --batch-size 4 --epoch 100 \
     --name coco_v7tiny_person_10000_train_result --hyp coco_v7tiny_person_10000_train_result/hyp.yaml
     
 # student : v7tiny(pretrained coco dataset) + fine-tuning with person 10,000 with teacher v7x's knowledge distillation
+python train.py --workers 4 --device 0 --batch-size 4 --epoch 100 \
+    --data ../dataset/data.yaml --img 640 640 \
+    --teacher-cfg cfg/training/yolov7x.yaml --teacher-weights yolov7x.pt \
+    --student-cfg cfg/training/yolov7-tiny.yaml --student-weights yolov7-tiny.pt \
+    --name KD_v7x_to_v7tiny_person_10000_result --hyp coco_v7tiny_person_10000_train_result/hyp.yaml \
+    2>&1 | tee test.txt
+    
 
+    --cfg 
+    --weights
+    
 # result : baseline vs. student vs. teacher
+
+
 '''
