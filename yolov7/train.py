@@ -339,8 +339,6 @@ def train(hyp, opt, device, tb_writer=None):
 
     student_compute_loss_ota = ComputeLossOTA(student)  # init loss class
     student_compute_loss = ComputeLoss(student)  # init loss class
-    print(f"student_compute_loss_ota : {student_compute_loss_ota}")
-    print(f"student_compute_loss : {student_compute_loss}")
 
     logger.info(f'Image sizes {imgsz} train, {imgsz_test} test\n'
                 f'Using {dataloader.num_workers} dataloader workers\n'
@@ -404,12 +402,8 @@ def train(hyp, opt, device, tb_writer=None):
             with torch.no_grad():
                 pred_teacher = teacher(imgs) # tuple
 
-            print("here1")
-
             with amp.autocast(enabled=cuda):
-                print("here2")
                 pred_student = student(imgs)  # forward
-                print("here3")
 
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
                     print(f"hyp['loss_ota'] : {hyp['loss_ota']}")
