@@ -712,7 +712,7 @@ pip install -r requirements.txt
 python train.py --workers 4 --device 0 --batch-size 4 --epoch 100 \
     --data ../dataset/data.yaml --img 640 640 \
     --cfg cfg/training/yolov7x.yaml --weights yolov7x.pt \
-    --name coco_v7x_person_10000_train_result --hyp coco_v7x_person_10000_scratch_train_result/hyp.yaml
+    --name coco_v7x_person_10000_finetuning_result --hyp coco_v7x_person_10000_scratch_train_result/hyp.yaml
 
 # baseline : v7tiny(pretrained coco dataset) + fine-tuning with person 10,000
 python train.py --workers 4 --device 0 --batch-size 4 --epoch 100 \
