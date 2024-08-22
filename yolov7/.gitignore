@@ -46,9 +46,6 @@ test2017.zip
 train2017.zip
 val2017.zip
 
-dataset
-coco_v7x_person_10000_train_result
-
 # MATLAB GitIgnore -----------------------------------------------------------------------------------------------------
 *.m~
 *.mat
