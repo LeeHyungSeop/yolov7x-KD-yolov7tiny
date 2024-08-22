@@ -722,7 +722,5 @@ python train.py --workers 4 --device 0 --batch-size 4 --epoch 100 \
     
 # student : v7tiny(pretrained coco dataset) + fine-tuning with person 10,000 with teacher v7x's knowledge distillation
 
-
-
 # result : baseline vs. student vs. teacher
 '''
