@@ -342,121 +342,121 @@ def train(hyp, opt, device, tb_writer=None):
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         student.train()
         teacher.eval()
-        # Update image weights (optional)
-        if opt.image_weights:
-            # Generate indices
-            if rank in [-1, 0]:
-                cw = student.class_weights.cpu().numpy() * (1 - maps) ** 2 / nc  # class weights
-                iw = labels_to_image_weights(dataset.labels, nc=nc, class_weights=cw)  # image weights
-                dataset.indices = random.choices(range(dataset.n), weights=iw, k=dataset.n)  # rand weighted idx
-            # Broadcast if DDP
-            if rank != -1:
-                indices = (torch.tensor(dataset.indices) if rank == 0 else torch.zeros(dataset.n)).int()
-                dist.broadcast(indices, 0)
-                if rank != 0:
-                    dataset.indices = indices.cpu().numpy()
+        # # Update image weights (optional)
+        # if opt.image_weights:
+        #     # Generate indices
+        #     if rank in [-1, 0]:
+        #         cw = student.class_weights.cpu().numpy() * (1 - maps) ** 2 / nc  # class weights
+        #         iw = labels_to_image_weights(dataset.labels, nc=nc, class_weights=cw)  # image weights
+        #         dataset.indices = random.choices(range(dataset.n), weights=iw, k=dataset.n)  # rand weighted idx
+        #     # Broadcast if DDP
+        #     if rank != -1:
+        #         indices = (torch.tensor(dataset.indices) if rank == 0 else torch.zeros(dataset.n)).int()
+        #         dist.broadcast(indices, 0)
+        #         if rank != 0:
+        #             dataset.indices = indices.cpu().numpy()
 
-        # Update mosaic border
-        # b = int(random.uniform(0.25 * imgsz, 0.75 * imgsz + gs) // gs * gs)
-        # dataset.mosaic_border = [b - imgsz, -b]  # height, width borders
+        # # Update mosaic border
+        # # b = int(random.uniform(0.25 * imgsz, 0.75 * imgsz + gs) // gs * gs)
+        # # dataset.mosaic_border = [b - imgsz, -b]  # height, width borders
 
-        # mloss = torch.zeros(4, device=device)  # mean losses
-        mloss = torch.zeros(5, device=device)  # mean losses
+        # # mloss = torch.zeros(4, device=device)  # mean losses
+        # mloss = torch.zeros(5, device=device)  # mean losses
 
-        if rank != -1:
-            dataloader.sampler.set_epoch(epoch)
-        pbar = enumerate(dataloader)
+        # if rank != -1:
+        #     dataloader.sampler.set_epoch(epoch)
+        # pbar = enumerate(dataloader)
 
-        # 2024.08.28 @hslee : kd loss
-        logger.info(('\n' + '%10s' * 9) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'kd', 'total', 'labels', 'img_size'))
-        if rank in [-1, 0]:
-            pbar = tqdm(pbar, total=nb)  # progress bar
-        student_optimizer.zero_grad()
-        for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
-            ni = i + nb * epoch  # number integrated batches (since train start)
-            imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
+        # # 2024.08.28 @hslee : kd loss
+        # logger.info(('\n' + '%10s' * 9) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'kd', 'total', 'labels', 'img_size'))
+        # if rank in [-1, 0]:
+        #     pbar = tqdm(pbar, total=nb)  # progress bar
+        # student_optimizer.zero_grad()
+        # for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
+        #     ni = i + nb * epoch  # number integrated batches (since train start)
+        #     imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
 
-            # Warmup
-            if ni <= nw:
-                xi = [0, nw]  # x interp
-                # student.gr = np.interp(ni, xi, [0.0, 1.0])  # iou loss ratio (obj_loss = 1.0 or iou)
-                accumulate = max(1, np.interp(ni, xi, [1, nbs / total_batch_size]).round())
-                for j, x in enumerate(student_optimizer.param_groups):
-                    # bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
-                    x['lr'] = np.interp(ni, xi, [hyp['warmup_bias_lr'] if j == 2 else 0.0, x['initial_lr'] * lf(epoch)])
-                    if 'momentum' in x:
-                        x['momentum'] = np.interp(ni, xi, [hyp['warmup_momentum'], hyp['momentum']])
+        #     # Warmup
+        #     if ni <= nw:
+        #         xi = [0, nw]  # x interp
+        #         # student.gr = np.interp(ni, xi, [0.0, 1.0])  # iou loss ratio (obj_loss = 1.0 or iou)
+        #         accumulate = max(1, np.interp(ni, xi, [1, nbs / total_batch_size]).round())
+        #         for j, x in enumerate(student_optimizer.param_groups):
+        #             # bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
+        #             x['lr'] = np.interp(ni, xi, [hyp['warmup_bias_lr'] if j == 2 else 0.0, x['initial_lr'] * lf(epoch)])
+        #             if 'momentum' in x:
+        #                 x['momentum'] = np.interp(ni, xi, [hyp['warmup_momentum'], hyp['momentum']])
 
-            # Multi-scale
-            if opt.multi_scale:
-                sz = random.randrange(imgsz * 0.5, imgsz * 1.5 + gs) // gs * gs  # size
-                sf = sz / max(imgs.shape[2:])  # scale factor
-                if sf != 1:
-                    ns = [math.ceil(x * sf / gs) * gs for x in imgs.shape[2:]]  # new shape (stretched to gs-multiple)
-                    imgs = F.interpolate(imgs, size=ns, mode='bilinear', align_corners=False)
+        #     # Multi-scale
+        #     if opt.multi_scale:
+        #         sz = random.randrange(imgsz * 0.5, imgsz * 1.5 + gs) // gs * gs  # size
+        #         sf = sz / max(imgs.shape[2:])  # scale factor
+        #         if sf != 1:
+        #             ns = [math.ceil(x * sf / gs) * gs for x in imgs.shape[2:]]  # new shape (stretched to gs-multiple)
+        #             imgs = F.interpolate(imgs, size=ns, mode='bilinear', align_corners=False)
 
-            # Forward
-            # 2024.08.22 @hslee : teacher forward
-            with torch.no_grad():
-                pred_teacher, fpns_teacher, preds_teacher = teacher(imgs) # tuple
+        #     # Forward
+        #     # 2024.08.22 @hslee : teacher forward
+        #     with torch.no_grad():
+        #         pred_teacher, fpns_teacher, preds_teacher = teacher(imgs) # tuple
 
-            with amp.autocast(enabled=cuda):
-                pred_student, fpns_student, preds_student = student(imgs)  # forward
+        #     with amp.autocast(enabled=cuda):
+        #         pred_student, fpns_student, preds_student = student(imgs)  # forward
 
-                if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
-                    loss, loss_items = student_compute_loss_ota(pred_teacher,fpns_teacher, preds_teacher, pred_student,fpns_student, preds_student, targets.to(device), imgs)  # loss scaled by batch_size
-                else:
-                    loss, loss_items = student_compute_loss(pred_teacher, pred_student, targets.to(device))  # loss scaled by batch_size
-                if rank != -1:
-                    loss *= opt.world_size  # gradient averaged between devices in DDP mode
-                if opt.quad:
-                    loss *= 4.
+        #         if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
+        #             loss, loss_items = student_compute_loss_ota(pred_teacher,fpns_teacher, preds_teacher, pred_student,fpns_student, preds_student, targets.to(device), imgs)  # loss scaled by batch_size
+        #         else:
+        #             loss, loss_items = student_compute_loss(pred_teacher, pred_student, targets.to(device))  # loss scaled by batch_size
+        #         if rank != -1:
+        #             loss *= opt.world_size  # gradient averaged between devices in DDP mode
+        #         if opt.quad:
+        #             loss *= 4.
 
-            # Backward
-            scaler.scale(loss).backward()
+        #     # Backward
+        #     scaler.scale(loss).backward()
 
-            # Optimize
-            if ni % accumulate == 0:
-                scaler.step(student_optimizer)  # student_optimizer.step
-                scaler.update()
-                student_optimizer.zero_grad()
-                if ema:
-                    ema.update(student)
+        #     # Optimize
+        #     if ni % accumulate == 0:
+        #         scaler.step(student_optimizer)  # student_optimizer.step
+        #         scaler.update()
+        #         student_optimizer.zero_grad()
+        #         if ema:
+        #             ema.update(student)
 
-            # Print
-            if rank in [-1, 0]:
-                mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
-                mem = '%.3gG' % (torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0)  # (GB)
-                s = ('%10s' * 3 + '%10.4g' * 6) % (
-                    f'{epoch}/{epochs - 1}', mem, *mloss, len(targets), imgs.shape[-1])
+        #     # Print
+        #     if rank in [-1, 0]:
+        #         mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
+        #         mem = '%.3gG' % (torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0)  # (GB)
+        #         s = ('%10s' * 3 + '%10.4g' * 6) % (
+        #             f'{epoch}/{epochs - 1}', mem, *mloss, len(targets), imgs.shape[-1])
 
                 
-                pbar.set_description(s)
+        #         pbar.set_description(s)
 
-            if rank in [-1, 0]:
-                mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
-                mem = '%.3gG' % (torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0)  # (GB)
-                s = ('%10s' * 3 + '%10.4g' * 6) % (
-                    f'{epoch}/{epochs - 1}', mem, *mloss, len(targets), imgs.shape[-1])
+        #     if rank in [-1, 0]:
+        #         mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
+        #         mem = '%.3gG' % (torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0)  # (GB)
+        #         s = ('%10s' * 3 + '%10.4g' * 6) % (
+        #             f'{epoch}/{epochs - 1}', mem, *mloss, len(targets), imgs.shape[-1])
 
-                pbar.set_description(s)
-                # Plot
-                if plots and ni < 10:
-                    f = save_dir / f'train_batch{ni}.jpg'  # filename
-                    Thread(target=plot_images, args=(imgs, targets, paths, f), daemon=True).start()
-                    # if tb_writer:
-                    #     tb_writer.add_image(f, result, dataformats='HWC', global_step=epoch)
-                    #     tb_writer.add_graph(torch.jit.trace(student, imgs, strict=False), [])  # add student graph
-                elif plots and ni == 10 and wandb_logger.wandb:
-                    wandb_logger.log({"Mosaics": [wandb_logger.wandb.Image(str(x), caption=x.name) for x in
-                                                  save_dir.glob('train*.jpg') if x.exists()]})
+        #         pbar.set_description(s)
+        #         # Plot
+        #         if plots and ni < 10:
+        #             f = save_dir / f'train_batch{ni}.jpg'  # filename
+        #             Thread(target=plot_images, args=(imgs, targets, paths, f), daemon=True).start()
+        #             # if tb_writer:
+        #             #     tb_writer.add_image(f, result, dataformats='HWC', global_step=epoch)
+        #             #     tb_writer.add_graph(torch.jit.trace(student, imgs, strict=False), [])  # add student graph
+        #         elif plots and ni == 10 and wandb_logger.wandb:
+        #             wandb_logger.log({"Mosaics": [wandb_logger.wandb.Image(str(x), caption=x.name) for x in
+        #                                           save_dir.glob('train*.jpg') if x.exists()]})
 
-            # end batch ------------------------------------------------------------------------------------------------
-        # end epoch ----------------------------------------------------------------------------------------------------
+        #     # end batch ------------------------------------------------------------------------------------------------
+        # # end epoch ----------------------------------------------------------------------------------------------------
 
-        # Scheduler
-        lr = [x['lr'] for x in student_optimizer.param_groups]  # for tensorboard
-        scheduler.step()
+        # # Scheduler
+        # lr = [x['lr'] for x in student_optimizer.param_groups]  # for tensorboard
+        # scheduler.step()
 
         # DDP process 0 or single-GPU
         if rank in [-1, 0]:
