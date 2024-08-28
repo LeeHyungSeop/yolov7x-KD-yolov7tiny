@@ -418,6 +418,77 @@ class APLoss(torch.autograd.Function):
         g1, =ctx.saved_tensors
         return g1*out_grad1, None, None
 
+def compute_position_wise_prediction_difference(Pc_stu, Pc_tea):
+    """
+    Compute the position-wise prediction difference.
+    
+    Parameters:
+    - Pc_stu (Tensor): Student predictions of shape (B, C, H, W)
+    - Pc_tea (Tensor): Teacher predictions of shape (B, C, H, W)
+    
+    Returns:
+    - Pdif (Tensor): Position-wise prediction difference of shape (H, W)
+    """
+    # Compute the absolute difference and then average over the channels and batch dimensions
+    Pdif = torch.mean(torch.abs(Pc_stu - Pc_tea) ** 2, dim=(0, 1))
+    return Pdif
+
+def compute_position_wise_feature_difference(Fq_stu, Fq_tea):
+    """
+    Compute the position-wise feature difference.
+    
+    Parameters:
+    - Fq_stu (Tensor): Student features of shape (B, Q, H, W)
+    - Fq_tea (Tensor): Teacher features of shape (B, Q, H, W)
+    
+    Returns:
+    - Fdif (Tensor): Position-wise feature difference of shape (H, W)
+    """
+    # Compute the absolute difference and then average over the channels and batch dimensions
+    Fdif = torch.mean(torch.abs(Fq_stu - Fq_tea) ** 2, dim=(0, 1))
+    return Fdif
+
+def compute_loss_pfi(Pdif, Fdif):
+    """
+    Compute the LossPFI based on position-wise prediction and feature difference.
+    
+    Parameters:
+    - Pdif (Tensor): Position-wise prediction difference of shape (H, W)
+    - Fdif (Tensor): Position-wise feature difference of shape (H, W)
+    
+    Returns:
+    - LossPFI (Tensor): LossPFI value
+    """
+    return torch.mean((Pdif * Fdif) ** 2)
+
+def overall_loss_function(Pc_stu, Pc_tea, Fq_stu, Fq_tea):
+    """
+    Compute the overall loss function.
+    
+    Parameters:
+    - Pc_stu (Tensor): Student predictions of shape (B, C, H, W)
+    - Pc_tea (Tensor): Teacher predictions of shape (B, C, H, W)
+    - Fq_stu (Tensor): Student features of shape (B, Q, H, W)
+    - Fq_tea (Tensor): Teacher features of shape (B, Q, H, W)
+    
+    Returns:
+    - loss (Tensor): Overall loss value
+    """
+    # Compute position-wise prediction difference
+    Pdif = compute_position_wise_prediction_difference(Pc_stu, Pc_tea)
+    
+    # Compute position-wise feature difference
+    Fdif = compute_position_wise_feature_difference(Fq_stu, Fq_tea)
+    
+    # Compute LossPFI
+    LossPFI = compute_loss_pfi(Pdif, Fdif)
+    
+    # Get the height and width
+    _, _, H, W = Pc_stu.shape
+    
+    # Overall loss function
+    loss = (1 / (H * W)) * LossPFI
+    return loss
 
 class ComputeLoss:
     # Compute losses
@@ -449,15 +520,11 @@ class ComputeLoss:
 
     def __call__(self, p, targets):  # predictions, targets, model
         device = targets.device
-        lcls, lbox, lobj = torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
+        lcls, lbox, lobj, lkd = torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
         tcls, tbox, indices, anchors = self.build_targets(p, targets)  # targets
 
         # Losses
         for i, pi in enumerate(p):  # layer index, layer predictions
-            
-            # 2024.08.22 @hslee
-            print(f"i = {i}")
-            print(f"pi.shape = {pi.shape}")
             b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
             tobj = torch.zeros_like(pi[..., 0], device=device)  # target obj
 
@@ -496,13 +563,13 @@ class ComputeLoss:
         lbox *= self.hyp['box']
         lobj *= self.hyp['obj']
         lcls *= self.hyp['cls']
+        lkd *= 1.5 # default 1.5(=beta) by paper 
         bs = tobj.shape[0]  # batch size
 
 
         # 2024.08.22 @hslee : Knowledge Distillation Loss
-        loss_kd = torch.zeros(1, device=device)
-        loss = lbox + lobj + lcls + loss_kd
-        return loss * bs, torch.cat((lbox, lobj, lcls, loss, loss_kd)).detach()
+        loss = lbox + lobj + lcls + lkd
+        return loss * bs, torch.cat((lbox, lobj, lcls, loss, lkd)).detach()
 
     def build_targets(self, p, targets):
         # Build targets for compute_loss(), input targets(image,class,x,y,w,h)
@@ -586,15 +653,26 @@ class ComputeLossOTA:
         for k in 'na', 'nc', 'nl', 'anchors', 'stride':
             setattr(self, k, getattr(det, k))
 
-    def __call__(self, p, targets, imgs):  # predictions, targets, model   
+    def __call__(self, pred_teacher, fpns_teacher, preds_teacher, pred_student, fpns_student, preds_student, targets, imgs):  # predictions, targets, model   
         device = targets.device
-        lcls, lbox, lobj = torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
-        bs, as_, gjs, gis, targets, anchors = self.build_targets(p, targets, imgs)
-        pre_gen_gains = [torch.tensor(pp.shape, device=device)[[3, 2, 3, 2]] for pp in p] 
-    
+        lcls, lbox, lobj, lkd = \
+            torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
+        bs, as_, gjs, gis, targets, anchors = self.build_targets(pred_student, targets, imgs)
+        pre_gen_gains = [torch.tensor(pp.shape, device=device)[[3, 2, 3, 2]] for pp in pred_student] 
+
+        # for i, f in enumerate(fpns_teacher):  
+        #     print(f"fpns_teacher[{i}].shape = {f.shape}")
+        # for i, f in enumerate(fpns_student):  
+        #     print(f"fpns_student[{i}].shape = {f.shape}")
+        # for i, f in enumerate(preds_student):  
+        #     print(f"preds_student[{i}].shape = {f.shape}")
+        # for i, f in enumerate(preds_teacher):  
+        #     print(f"preds_teacher[{i}].shape = {f.shape}")
+        
 
         # Losses
-        for i, pi in enumerate(p):  # layer index, layer predictions
+        for i, pi in enumerate(pred_student):  # layer index, layer predictions
+            # print(f"i = {i}, pi.shape = {pi.shape}")
             b, a, gj, gi = bs[i], as_[i], gjs[i], gis[i]  # image, anchor, gridy, gridx
             tobj = torch.zeros_like(pi[..., 0], device=device)  # target obj
 
@@ -623,9 +701,21 @@ class ComputeLossOTA:
                     t[range(n), selected_tcls] = self.cp
                     lcls += self.BCEcls(ps[:, 5:], t)  # BCE
 
-                # Append targets to text file
-                # with open('targets.txt', 'a') as file:
-                #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
+                # 2024.08.26 @hslee : Knowledge Distillation Loss
+                # KD Loss
+                k = preds_student[i].shape[1]
+                # print(f"k = {k}")
+                
+                selected_channel_idx = torch.argsort(torch.norm(fpns_student[i], p=1, dim=(0, 2, 3)), descending=True)[:k]
+                selected_fpn_teacher = fpns_teacher[i][:, selected_channel_idx]
+
+                selected_channel_idx = torch.argsort(torch.norm(preds_student[i], p=1, dim=(0, 2, 3)), descending=True)[:k]
+                selected_pred_teacher = preds_teacher[i][:, selected_channel_idx]
+                
+                
+                # knowledge distillation loss
+                lkd += overall_loss_function(preds_student[i], selected_pred_teacher, fpns_student[i], selected_fpn_teacher)
+
 
             obji = self.BCEobj(pi[..., 4], tobj)
             lobj += obji * self.balance[i]  # obj loss
@@ -637,10 +727,14 @@ class ComputeLossOTA:
         lbox *= self.hyp['box']
         lobj *= self.hyp['obj']
         lcls *= self.hyp['cls']
+        lkd *= 1.5 # default 1.5(=beta) by paper
         bs = tobj.shape[0]  # batch size
 
-        loss = lbox + lobj + lcls
-        return loss * bs, torch.cat((lbox, lobj, lcls, loss)).detach()
+        loss = lbox + lobj + lcls + lkd
+
+        # print(f"lbox = {lbox}, lobj = {lobj}, lcls = {lcls}, lkd = {lkd}, loss = {loss}")
+
+        return loss * bs, torch.cat((lbox, lobj, lcls, loss, lkd)).detach()
 
     def build_targets(self, p, targets, imgs):
         

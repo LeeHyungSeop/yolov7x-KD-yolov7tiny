@@ -19,7 +19,6 @@ try:
 except ImportError:
     thop = None
 
-
 class Detect(nn.Module):
     stride = None  # strides computed during build
     export = False  # onnx export
@@ -541,7 +540,7 @@ class Model(nn.Module):
             # print('Strides: %s' % m.stride.tolist())
         if isinstance(m, IDetect):
             s = 256  # 2x min stride
-            m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
+            m.stride = torch.tensor([s / x.shape[-2] for x, _, _ in self.forward(torch.zeros(1, ch, s, s))])  # forward
             check_anchor_order(m)
             m.anchors /= m.stride.view(-1, 1, 1)
             self.stride = m.stride
@@ -579,6 +578,8 @@ class Model(nn.Module):
         logger.info('')
 
     def forward(self, x, augment=False, profile=False):
+        # print("Model.forward")
+        # print(f"\tAugment: {augment}") # False  
         if augment:
             img_size = x.shape[-2:]  # height, width
             s = [1, 0.83, 0.67]  # scales
@@ -600,7 +601,31 @@ class Model(nn.Module):
 
     def forward_once(self, x, profile=False):
         y, dt = [], []  # outputs
-        for m in self.model:
+
+        isTeacher = False
+
+        tea_fpns = [18, 33, 48]
+        tea_preds = [118, 119 ,120]
+        # stu_fpns = [8, 15, 22]
+        stu_fpns = [14, 21, 28]
+        stu_preds = [74, 75, 76]
+
+        fpns = []
+        preds = []
+
+        fpns_res = []
+        preds_res = []
+
+        if len(self.model) == 122:
+            isTeacher = True
+            fpns = tea_fpns
+            preds = tea_preds
+        else :
+            fpns = stu_fpns
+            preds = stu_preds
+            
+        for i, m in enumerate(self.model):
+            # print(f"Model.forward_once: {i} {m.type}")
             if m.f != -1:  # if not from previous layer
                 x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
 
@@ -624,11 +649,16 @@ class Model(nn.Module):
 
             x = m(x)  # run
             
+            if i in fpns:
+                fpns_res.append(x)
+            if i in preds:
+                preds_res.append(x)
+            
             y.append(x if m.i in self.save else None)  # save output
 
         if profile:
             print('%.1fms total' % sum(dt))
-        return x
+        return x, fpns_res, preds_res
 
     def _initialize_biases(self, cf=None):  # initialize biases into Detect(), cf is class frequency
         # https://arxiv.org/abs/1708.02002 section 3.3

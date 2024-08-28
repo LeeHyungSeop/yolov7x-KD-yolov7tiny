@@ -97,49 +97,32 @@ def train(hyp, opt, device, tb_writer=None):
 
     # Model
     pretrained = teacher_weights.endswith('.pt')
-    print(f"pretrained : {pretrained}")
+    print(f"teacher(yolov7x) pretrained : {pretrained}")
     if pretrained:
         with torch_distributed_zero_first(rank):
-<<<<<<< HEAD
-            attempt_download(weights)  # download if not found locally
-        ckpt = torch.load(weights, map_location=device)  # load checkpoint
-        model = Model(opt.cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
-        exclude = ['anchor'] if (opt.cfg or hyp.get('anchors')) and not opt.resume else []  # exclude keys
-        state_dict = ckpt['model'].float().state_dict()  # to FP32
-        state_dict = intersect_dicts(state_dict, model.state_dict(), exclude=exclude)  # intersect
-        model.load_state_dict(state_dict, strict=False)  # load
-        logger.info('Transferred %g/%g items from %s' % (len(state_dict), len(model.state_dict()), weights))  # report
-=======
-            # 2024.08.22 @hslee : load teacher and student model from checkpoint
+            # 2024.08.22 @hslee : load model from checkpoint
+            # teacher model(v7x) load
+            print(f"teacher_cfg : {opt.teacher_cfg}")
             print(f"teacher_weights : {teacher_weights}")
-            attempt_download(teacher_weights)  # download if not found locally
-        ckpt = torch.load(teacher_weights, map_location=device)  # load checkpoint
+            ckpt = torch.load(teacher_weights, map_location=device)  # load checkpoint
+            teacher = Model(opt.teacher_cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+            exclude = ['anchor'] if (opt.teacher_cfg or hyp.get('anchors')) and not opt.resume else []  # exclude keys
+            state_dict = ckpt['model'].float().state_dict()  # to FP32
+            state_dict = intersect_dicts(state_dict, teacher.state_dict(), exclude=exclude)  # intersect
+            teacher.load_state_dict(state_dict, strict=False)  # load
+            logger.info('Transferred %g/%g items from %s' % (len(state_dict), len(teacher.state_dict()), teacher_weights))  # report
         
-        # print(f"ckpt.keys() : {ckpt.keys()}")
-        # '''
-        # dict_keys(['model', 'optimizer', 'training_results', 'epoch'])
-        # '''
-
-        # 2024.08.22 @hslee : load model from checkpoint
-        print(f"teacher_cfg : {opt.teacher_cfg}")
-        print(f"student_cfg : {opt.student_cfg}")
-
-        # teacher model(v7x) load
-        teacher = Model(opt.teacher_cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
-        exclude = ['anchor'] if (opt.teacher_cfg or hyp.get('anchors')) and not opt.resume else []  # exclude keys
-        state_dict = ckpt['model'].float().state_dict()  # to FP32
-        state_dict = intersect_dicts(state_dict, teacher.state_dict(), exclude=exclude)  # intersect
-        teacher.load_state_dict(state_dict, strict=False)  # load
-        logger.info('Transferred %g/%g items from %s' % (len(state_dict), len(teacher.state_dict()), teacher_weights))  # report
-    
-        # student model(v7-tiny) load
-        student = Model(opt.student_cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
-        exclude = ['anchor'] if (opt.student_cfg or hyp.get('anchors')) and not opt.resume else []  # exclude keys
-        state_dict = ckpt['model'].float().state_dict()  # to FP32
-        state_dict = intersect_dicts(state_dict, student.state_dict(), exclude=exclude)  # intersect
-        student.load_state_dict(state_dict, strict=False)  # load
-        logger.info('Transferred %g/%g items from %s' % (len(state_dict), len(student.state_dict()), student_weights))  # report
->>>>>>> KD
+            # student model(v7-tiny) load
+            print(f"student_cfg : {opt.student_cfg}")
+            print(f"student_weights : {student_weights}")
+            attempt_download(student_weights)  # download if not found locally
+            ckpt = torch.load(student_weights, map_location=device)  # load checkpoint
+            student = Model(opt.student_cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+            exclude = ['anchor'] if (opt.student_cfg or hyp.get('anchors')) and not opt.resume else []  # exclude keys
+            state_dict = ckpt['model'].float().state_dict()  # to FP32
+            state_dict = intersect_dicts(state_dict, student.state_dict(), exclude=exclude)  # intersect
+            student.load_state_dict(state_dict, strict=False)  # load
+            logger.info('Transferred %g/%g items from %s' % (len(state_dict), len(student.state_dict()), student_weights))  # report
     else:
         model = Model(opt.cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
     with torch_distributed_zero_first(rank):
@@ -377,11 +360,15 @@ def train(hyp, opt, device, tb_writer=None):
         # b = int(random.uniform(0.25 * imgsz, 0.75 * imgsz + gs) // gs * gs)
         # dataset.mosaic_border = [b - imgsz, -b]  # height, width borders
 
-        mloss = torch.zeros(4, device=device)  # mean losses
+        # mloss = torch.zeros(4, device=device)  # mean losses
+        mloss = torch.zeros(5, device=device)  # mean losses
+
         if rank != -1:
             dataloader.sampler.set_epoch(epoch)
         pbar = enumerate(dataloader)
-        logger.info(('\n' + '%10s' * 8) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'total', 'labels', 'img_size'))
+
+        # 2024.08.28 @hslee : kd loss
+        logger.info(('\n' + '%10s' * 9) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'kd', 'total', 'labels', 'img_size'))
         if rank in [-1, 0]:
             pbar = tqdm(pbar, total=nb)  # progress bar
         student_optimizer.zero_grad()
@@ -411,19 +398,15 @@ def train(hyp, opt, device, tb_writer=None):
             # Forward
             # 2024.08.22 @hslee : teacher forward
             with torch.no_grad():
-                pred_teacher = teacher(imgs) # tuple
+                pred_teacher, fpns_teacher, preds_teacher = teacher(imgs) # tuple
 
             with amp.autocast(enabled=cuda):
-                pred_student = student(imgs)  # forward
+                pred_student, fpns_student, preds_student = student(imgs)  # forward
 
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
-                    print(f"hyp['loss_ota'] : {hyp['loss_ota']}")
-                    print(f"call student_compute_loss_ota()")
-                    loss, loss_items = student_compute_loss_ota(pred_student, targets.to(device), imgs)  # loss scaled by batch_size
+                    loss, loss_items = student_compute_loss_ota(pred_teacher, fpns_teacher, preds_teacher, pred_student,fpns_student, preds_student, targets.to(device), imgs)  # loss scaled by batch_size
                 else:
-                    print(f"hyp['loss_ota'] : {hyp['loss_ota']}")
-                    print(f"call student_compute_loss()")
-                    loss, loss_items = student_compute_loss(pred_student, targets.to(device))  # loss scaled by batch_size
+                    loss, loss_items = student_compute_loss(pred_teacher, pred_student, targets.to(device))  # loss scaled by batch_size
                 if rank != -1:
                     loss *= opt.world_size  # gradient averaged between devices in DDP mode
                 if opt.quad:
@@ -444,11 +427,19 @@ def train(hyp, opt, device, tb_writer=None):
             if rank in [-1, 0]:
                 mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
                 mem = '%.3gG' % (torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0)  # (GB)
-                s = ('%10s' * 2 + '%10.4g' * 6) % (
-                    '%g/%g' % (epoch, epochs - 1), mem, *mloss, targets.shape[0], imgs.shape[-1])
+                s = ('%10s' * 3 + '%10.4g' * 6) % (
+                    f'{epoch}/{epochs - 1}', mem, *mloss, len(targets), imgs.shape[-1])
+
                 
                 pbar.set_description(s)
 
+            if rank in [-1, 0]:
+                mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
+                mem = '%.3gG' % (torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0)  # (GB)
+                s = ('%10s' * 3 + '%10.4g' * 6) % (
+                    f'{epoch}/{epochs - 1}', mem, *mloss, len(targets), imgs.shape[-1])
+
+                pbar.set_description(s)
                 # Plot
                 if plots and ni < 10:
                     f = save_dir / f'train_batch{ni}.jpg'  # filename
@@ -470,7 +461,7 @@ def train(hyp, opt, device, tb_writer=None):
         # DDP process 0 or single-GPU
         if rank in [-1, 0]:
             # mAP
-            ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'gr', 'names', 'stride', 'class_weights'])
+            ema.update_attr(student, include=['yaml', 'nc', 'hyp', 'gr', 'names', 'stride', 'class_weights'])
             final_epoch = epoch + 1 == epochs
             if not opt.notest or final_epoch:  # Calculate mAP
                 wandb_logger.current_epoch = epoch + 1
@@ -516,7 +507,7 @@ def train(hyp, opt, device, tb_writer=None):
                 ckpt = {'epoch': epoch,
                         'best_fitness': best_fitness,
                         'training_results': results_file.read_text(),
-                        'model': deepcopy(model.module if is_parallel(model) else model).half(),
+                        'model': deepcopy(student.module if is_parallel(student) else student).half(),
                         'ema': deepcopy(ema.ema).half(),
                         'updates': ema.updates,
                         'optimizer': student_optimizer.state_dict(),
@@ -795,8 +786,7 @@ python train.py --workers 4 --device 0 --batch-size 4 --epoch 100 \
     2>&1 | tee ./test.txt
 =======
     --name KD_v7x_to_v7tiny_person_10000_result --hyp coco_v7tiny_person_10000_finetuning_result/hyp.yaml \
-    2>&1 | tee test.txt
->>>>>>> KD
+    2>&1 | tee ./test.txt
     
     
 # result : baseline vs. student vs. teacher
