@@ -40,8 +40,22 @@ logger = logging.getLogger(__name__)
 
 def train(hyp, opt, device, tb_writer=None):
     logger.info(colorstr('hyperparameters: ') + ', '.join(f'{k}={v}' for k, v in hyp.items()))
-    save_dir, epochs, batch_size, total_batch_size, weights, rank, freeze = \
-        Path(opt.save_dir), opt.epochs, opt.batch_size, opt.total_batch_size, opt.weights, opt.global_rank, opt.freeze
+    
+    # 2024.08.22 @hslee : print opt
+    # print(f"opt : {opt}")
+    '''
+    opt : Namespace(
+        weights='yolo7.pt', cfg='', 
+        teacher_weights='yolov7x.pt', student_weights='yolov7-tiny.pt', 
+        teacher_cfg='cfg/training/yolov7x.yaml', student_cfg='cfg/training/yolov7-tiny.yaml', 
+        data='../dataset/data.yaml', 
+        hyp='./runs/train/coco_v7tiny_person_10000_finetuning_result/hyp.yaml', 
+        epochs=100, batch_size=4, img_size=[640, 640], rect=False, resume=False, nosave=False, notest=False, noautoanchor=False, evolve=False, bucket='', cache_images=False, image_weights=False, device='0', multi_scale=False, single_cls=False, adam=False, sync_bn=False, local_rank=-1, workers=4, project='runs/train', entity=None, name='KD_v7x_to_v7tiny_person_10000_result', exist_ok=False, quad=False, linear_lr=False, label_smoothing=0.0, upload_dataset=False, bbox_interval=-1, save_period=-1, artifact_alias='latest', freeze=[0], v5_metric=False, world_size=1, global_rank=-1, save_dir='runs/train/KD_v7x_to_v7tiny_person_10000_result2', total_batch_size=4)
+    '''
+    save_dir, epochs, batch_size, total_batch_size,\
+    teacher_weights, student_weights, rank, freeze = \
+        Path(opt.save_dir), opt.epochs, opt.batch_size, opt.total_batch_size, \
+        opt.teacher_weights, opt.student_weights, opt.global_rank, opt.freeze
 
     # Directories
     wdir = save_dir / 'weights'
@@ -68,11 +82,13 @@ def train(hyp, opt, device, tb_writer=None):
     loggers = {'wandb': None}  # loggers dict
     if rank in [-1, 0]:
         opt.hyp = hyp  # add hyperparameters
-        run_id = torch.load(weights, map_location=device).get('wandb_id') if weights.endswith('.pt') and os.path.isfile(weights) else None
-        wandb_logger = WandbLogger(opt, Path(opt.save_dir).stem, run_id, data_dict)
+        student_run_id = torch.load(student_weights, map_location=device).get('wandb_id') if student_weights.endswith('.pt') and os.path.isfile(student_weights) else None
+
+        wandb_logger = WandbLogger(opt, Path(opt.save_dir).stem, student_run_id, data_dict)
         loggers['wandb'] = wandb_logger.wandb
         data_dict = wandb_logger.data_dict
         if wandb_logger.wandb:
+            print(f"wandb_logger.wandb : {wandb_logger.wandb}")
             weights, epochs, hyp = opt.weights, opt.epochs, opt.hyp  # WandbLogger might update weights, epochs if resuming
 
     nc = 1 if opt.single_cls else int(data_dict['nc'])  # number of classes
@@ -80,9 +96,11 @@ def train(hyp, opt, device, tb_writer=None):
     assert len(names) == nc, '%g names found for nc=%g dataset in %s' % (len(names), nc, opt.data)  # check
 
     # Model
-    pretrained = weights.endswith('.pt')
+    pretrained = teacher_weights.endswith('.pt')
+    print(f"pretrained : {pretrained}")
     if pretrained:
         with torch_distributed_zero_first(rank):
+<<<<<<< HEAD
             attempt_download(weights)  # download if not found locally
         ckpt = torch.load(weights, map_location=device)  # load checkpoint
         model = Model(opt.cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
@@ -91,6 +109,37 @@ def train(hyp, opt, device, tb_writer=None):
         state_dict = intersect_dicts(state_dict, model.state_dict(), exclude=exclude)  # intersect
         model.load_state_dict(state_dict, strict=False)  # load
         logger.info('Transferred %g/%g items from %s' % (len(state_dict), len(model.state_dict()), weights))  # report
+=======
+            # 2024.08.22 @hslee : load teacher and student model from checkpoint
+            print(f"teacher_weights : {teacher_weights}")
+            attempt_download(teacher_weights)  # download if not found locally
+        ckpt = torch.load(teacher_weights, map_location=device)  # load checkpoint
+        
+        # print(f"ckpt.keys() : {ckpt.keys()}")
+        # '''
+        # dict_keys(['model', 'optimizer', 'training_results', 'epoch'])
+        # '''
+
+        # 2024.08.22 @hslee : load model from checkpoint
+        print(f"teacher_cfg : {opt.teacher_cfg}")
+        print(f"student_cfg : {opt.student_cfg}")
+
+        # teacher model(v7x) load
+        teacher = Model(opt.teacher_cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+        exclude = ['anchor'] if (opt.teacher_cfg or hyp.get('anchors')) and not opt.resume else []  # exclude keys
+        state_dict = ckpt['model'].float().state_dict()  # to FP32
+        state_dict = intersect_dicts(state_dict, teacher.state_dict(), exclude=exclude)  # intersect
+        teacher.load_state_dict(state_dict, strict=False)  # load
+        logger.info('Transferred %g/%g items from %s' % (len(state_dict), len(teacher.state_dict()), teacher_weights))  # report
+    
+        # student model(v7-tiny) load
+        student = Model(opt.student_cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+        exclude = ['anchor'] if (opt.student_cfg or hyp.get('anchors')) and not opt.resume else []  # exclude keys
+        state_dict = ckpt['model'].float().state_dict()  # to FP32
+        state_dict = intersect_dicts(state_dict, student.state_dict(), exclude=exclude)  # intersect
+        student.load_state_dict(state_dict, strict=False)  # load
+        logger.info('Transferred %g/%g items from %s' % (len(state_dict), len(student.state_dict()), student_weights))  # report
+>>>>>>> KD
     else:
         model = Model(opt.cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
     with torch_distributed_zero_first(rank):
@@ -100,7 +149,7 @@ def train(hyp, opt, device, tb_writer=None):
 
     # Freeze
     freeze = [f'model.{x}.' for x in (freeze if len(freeze) > 1 else range(freeze[0]))]  # parameter names to freeze (full or partial)
-    for k, v in model.named_parameters():
+    for k, v in student.named_parameters():
         v.requires_grad = True  # train all layers
         if any(x in k for x in freeze):
             print('freezing %s' % k)
@@ -112,80 +161,81 @@ def train(hyp, opt, device, tb_writer=None):
     hyp['weight_decay'] *= total_batch_size * accumulate / nbs  # scale weight_decay
     logger.info(f"Scaled weight_decay = {hyp['weight_decay']}")
 
-    pg0, pg1, pg2 = [], [], []  # optimizer parameter groups
-    for k, v in model.named_modules():
+    student_pg0, student_pg1, student_pg2 = [], [], []  # optimizer parameter groups
+    for k, v in student.named_modules():
         if hasattr(v, 'bias') and isinstance(v.bias, nn.Parameter):
-            pg2.append(v.bias)  # biases
+            student_pg2.append(v.bias)  # biases
         if isinstance(v, nn.BatchNorm2d):
-            pg0.append(v.weight)  # no decay
+            student_pg0.append(v.weight)  # no decay
         elif hasattr(v, 'weight') and isinstance(v.weight, nn.Parameter):
-            pg1.append(v.weight)  # apply decay
+            student_pg1.append(v.weight)  # apply decay
         if hasattr(v, 'im'):
             if hasattr(v.im, 'implicit'):           
-                pg0.append(v.im.implicit)
+                student_pg0.append(v.im.implicit)
             else:
                 for iv in v.im:
-                    pg0.append(iv.implicit)
+                    student_pg0.append(iv.implicit)
         if hasattr(v, 'imc'):
             if hasattr(v.imc, 'implicit'):           
-                pg0.append(v.imc.implicit)
+                student_pg0.append(v.imc.implicit)
             else:
                 for iv in v.imc:
-                    pg0.append(iv.implicit)
+                    student_pg0.append(iv.implicit)
         if hasattr(v, 'imb'):
             if hasattr(v.imb, 'implicit'):           
-                pg0.append(v.imb.implicit)
+                student_pg0.append(v.imb.implicit)
             else:
                 for iv in v.imb:
-                    pg0.append(iv.implicit)
+                    student_pg0.append(iv.implicit)
         if hasattr(v, 'imo'):
             if hasattr(v.imo, 'implicit'):           
-                pg0.append(v.imo.implicit)
+                student_pg0.append(v.imo.implicit)
             else:
                 for iv in v.imo:
-                    pg0.append(iv.implicit)
+                    student_pg0.append(iv.implicit)
         if hasattr(v, 'ia'):
             if hasattr(v.ia, 'implicit'):           
-                pg0.append(v.ia.implicit)
+                student_pg0.append(v.ia.implicit)
             else:
                 for iv in v.ia:
-                    pg0.append(iv.implicit)
+                    student_pg0.append(iv.implicit)
         if hasattr(v, 'attn'):
             if hasattr(v.attn, 'logit_scale'):   
-                pg0.append(v.attn.logit_scale)
+                student_pg0.append(v.attn.logit_scale)
             if hasattr(v.attn, 'q_bias'):   
-                pg0.append(v.attn.q_bias)
+                student_pg0.append(v.attn.q_bias)
             if hasattr(v.attn, 'v_bias'):  
-                pg0.append(v.attn.v_bias)
+                student_pg0.append(v.attn.v_bias)
             if hasattr(v.attn, 'relative_position_bias_table'):  
-                pg0.append(v.attn.relative_position_bias_table)
+                student_pg0.append(v.attn.relative_position_bias_table)
         if hasattr(v, 'rbr_dense'):
             if hasattr(v.rbr_dense, 'weight_rbr_origin'):  
-                pg0.append(v.rbr_dense.weight_rbr_origin)
+                student_pg0.append(v.rbr_dense.weight_rbr_origin)
             if hasattr(v.rbr_dense, 'weight_rbr_avg_conv'): 
-                pg0.append(v.rbr_dense.weight_rbr_avg_conv)
+                student_pg0.append(v.rbr_dense.weight_rbr_avg_conv)
             if hasattr(v.rbr_dense, 'weight_rbr_pfir_conv'):  
-                pg0.append(v.rbr_dense.weight_rbr_pfir_conv)
+                student_pg0.append(v.rbr_dense.weight_rbr_pfir_conv)
             if hasattr(v.rbr_dense, 'weight_rbr_1x1_kxk_idconv1'): 
-                pg0.append(v.rbr_dense.weight_rbr_1x1_kxk_idconv1)
+                student_pg0.append(v.rbr_dense.weight_rbr_1x1_kxk_idconv1)
             if hasattr(v.rbr_dense, 'weight_rbr_1x1_kxk_conv2'):   
-                pg0.append(v.rbr_dense.weight_rbr_1x1_kxk_conv2)
+                student_pg0.append(v.rbr_dense.weight_rbr_1x1_kxk_conv2)
             if hasattr(v.rbr_dense, 'weight_rbr_gconv_dw'):   
-                pg0.append(v.rbr_dense.weight_rbr_gconv_dw)
+                student_pg0.append(v.rbr_dense.weight_rbr_gconv_dw)
             if hasattr(v.rbr_dense, 'weight_rbr_gconv_pw'):   
-                pg0.append(v.rbr_dense.weight_rbr_gconv_pw)
+                student_pg0.append(v.rbr_dense.weight_rbr_gconv_pw)
             if hasattr(v.rbr_dense, 'vector'):   
-                pg0.append(v.rbr_dense.vector)
+                student_pg0.append(v.rbr_dense.vector)
+
 
     if opt.adam:
-        optimizer = optim.Adam(pg0, lr=hyp['lr0'], betas=(hyp['momentum'], 0.999))  # adjust beta1 to momentum
+        student_optimizer = optim.Adam(student_pg0, lr=hyp['lr0'], betas=(hyp['momentum'], 0.999))  # adjust beta1 to momentum
     else:
-        optimizer = optim.SGD(pg0, lr=hyp['lr0'], momentum=hyp['momentum'], nesterov=True)
+        student_optimizer = optim.SGD(student_pg0, lr=hyp['lr0'], momentum=hyp['momentum'], nesterov=True)
 
-    optimizer.add_param_group({'params': pg1, 'weight_decay': hyp['weight_decay']})  # add pg1 with weight_decay
-    optimizer.add_param_group({'params': pg2})  # add pg2 (biases)
-    logger.info('Optimizer groups: %g .bias, %g conv.weight, %g other' % (len(pg2), len(pg1), len(pg0)))
-    del pg0, pg1, pg2
+    student_optimizer.add_param_group({'params': student_pg1, 'weight_decay': hyp['weight_decay']})  # add student_pg1 with weight_decay
+    student_optimizer.add_param_group({'params': student_pg2})  # add student_pg2 (biases)
+    logger.info('student_optimizer groups: %g .bias, %g conv.weight, %g other' % (len(student_pg2), len(student_pg1), len(student_pg0)))
+    del student_pg0, student_pg1, student_pg2
 
     # Scheduler https://arxiv.org/pdf/1812.01187.pdf
     # https://pytorch.org/docs/stable/_modules/torch/optim/lr_scheduler.html#OneCycleLR
@@ -193,18 +243,18 @@ def train(hyp, opt, device, tb_writer=None):
         lf = lambda x: (1 - x / (epochs - 1)) * (1.0 - hyp['lrf']) + hyp['lrf']  # linear
     else:
         lf = one_cycle(1, hyp['lrf'], epochs)  # cosine 1->hyp['lrf']
-    scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
+    scheduler = lr_scheduler.LambdaLR(student_optimizer, lr_lambda=lf)
     # plot_lr_scheduler(optimizer, scheduler, epochs)
 
     # EMA
-    ema = ModelEMA(model) if rank in [-1, 0] else None
+    ema = ModelEMA(student) if rank in [-1, 0] else None
 
     # Resume
     start_epoch, best_fitness = 0, 0.0
     if pretrained:
         # Optimizer
         if ckpt['optimizer'] is not None:
-            optimizer.load_state_dict(ckpt['optimizer'])
+            student_optimizer.load_state_dict(ckpt['optimizer'])
             best_fitness = ckpt['best_fitness']
 
         # EMA
@@ -219,17 +269,17 @@ def train(hyp, opt, device, tb_writer=None):
         # Epochs
         start_epoch = ckpt['epoch'] + 1
         if opt.resume:
-            assert start_epoch > 0, '%s training to %g epochs is finished, nothing to resume.' % (weights, epochs)
+            assert start_epoch > 0, '%s training to %g epochs is finished, nothing to resume.' % (student_weights, epochs)
         if epochs < start_epoch:
             logger.info('%s has been trained for %g epochs. Fine-tuning for %g additional epochs.' %
-                        (weights, ckpt['epoch'], epochs))
+                        (student_weights, ckpt['epoch'], epochs))
             epochs += ckpt['epoch']  # finetune additional epochs
 
         del ckpt, state_dict
 
     # Image sizes
-    gs = max(int(model.stride.max()), 32)  # grid size (max stride)
-    nl = model.model[-1].nl  # number of detection layers (used for scaling hyp['obj'])
+    gs = max(int(student.stride.max()), 32)  # grid size (max stride)
+    nl = student.model[-1].nl  # number of detection layers (used for scaling hyp['obj'])
     imgsz, imgsz_test = [check_img_size(x, gs) for x in opt.img_size]  # verify imgsz are gs-multiples
 
     # DP mode
@@ -269,25 +319,25 @@ def train(hyp, opt, device, tb_writer=None):
 
             # Anchors
             if not opt.noautoanchor:
-                check_anchors(dataset, model=model, thr=hyp['anchor_t'], imgsz=imgsz)
-            model.half().float()  # pre-reduce anchor precision
+                check_anchors(dataset, model=student, thr=hyp['anchor_t'], imgsz=imgsz)
+            student.half().float()  # pre-reduce anchor precision
 
     # DDP mode
     if cuda and rank != -1:
-        model = DDP(model, device_ids=[opt.local_rank], output_device=opt.local_rank,
+        student = DDP(student, device_ids=[opt.local_rank], output_device=opt.local_rank,
                     # nn.MultiheadAttention incompatibility with DDP https://github.com/pytorch/pytorch/issues/26698
-                    find_unused_parameters=any(isinstance(layer, nn.MultiheadAttention) for layer in model.modules()))
+                    find_unused_parameters=any(isinstance(layer, nn.MultiheadAttention) for layer in student.modules()))
 
     # Model parameters
     hyp['box'] *= 3. / nl  # scale to layers
     hyp['cls'] *= nc / 80. * 3. / nl  # scale to classes and layers
     hyp['obj'] *= (imgsz / 640) ** 2 * 3. / nl  # scale to image size and layers
     hyp['label_smoothing'] = opt.label_smoothing
-    model.nc = nc  # attach number of classes to model
-    model.hyp = hyp  # attach hyperparameters to model
-    model.gr = 1.0  # iou loss ratio (obj_loss = 1.0 or iou)
-    model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc  # attach class weights
-    model.names = names
+    student.nc = nc  # attach number of classes to model
+    student.hyp = hyp  # attach hyperparameters to model
+    student.gr = 1.0  # iou loss ratio (obj_loss = 1.0 or iou)
+    student.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc  # attach class weights
+    student.names = names
 
     # Start training
     t0 = time.time()
@@ -297,21 +347,23 @@ def train(hyp, opt, device, tb_writer=None):
     results = (0, 0, 0, 0, 0, 0, 0)  # P, R, mAP@.5, mAP@.5-.95, val_loss(box, obj, cls)
     scheduler.last_epoch = start_epoch - 1  # do not move
     scaler = amp.GradScaler(enabled=cuda)
-    compute_loss_ota = ComputeLossOTA(model)  # init loss class
-    compute_loss = ComputeLoss(model)  # init loss class
+
+    student_compute_loss_ota = ComputeLossOTA(student)  # init loss class
+    student_compute_loss = ComputeLoss(student)  # init loss class
+
     logger.info(f'Image sizes {imgsz} train, {imgsz_test} test\n'
                 f'Using {dataloader.num_workers} dataloader workers\n'
                 f'Logging results to {save_dir}\n'
                 f'Starting training for {epochs} epochs...')
-    torch.save(model, wdir / 'init.pt')
+    torch.save(student, wdir / 'init.pt')
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
-        model.train()
-
+        student.train()
+        teacher.eval()
         # Update image weights (optional)
         if opt.image_weights:
             # Generate indices
             if rank in [-1, 0]:
-                cw = model.class_weights.cpu().numpy() * (1 - maps) ** 2 / nc  # class weights
+                cw = student.class_weights.cpu().numpy() * (1 - maps) ** 2 / nc  # class weights
                 iw = labels_to_image_weights(dataset.labels, nc=nc, class_weights=cw)  # image weights
                 dataset.indices = random.choices(range(dataset.n), weights=iw, k=dataset.n)  # rand weighted idx
             # Broadcast if DDP
@@ -332,7 +384,7 @@ def train(hyp, opt, device, tb_writer=None):
         logger.info(('\n' + '%10s' * 8) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'total', 'labels', 'img_size'))
         if rank in [-1, 0]:
             pbar = tqdm(pbar, total=nb)  # progress bar
-        optimizer.zero_grad()
+        student_optimizer.zero_grad()
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
@@ -340,9 +392,9 @@ def train(hyp, opt, device, tb_writer=None):
             # Warmup
             if ni <= nw:
                 xi = [0, nw]  # x interp
-                # model.gr = np.interp(ni, xi, [0.0, 1.0])  # iou loss ratio (obj_loss = 1.0 or iou)
+                # student.gr = np.interp(ni, xi, [0.0, 1.0])  # iou loss ratio (obj_loss = 1.0 or iou)
                 accumulate = max(1, np.interp(ni, xi, [1, nbs / total_batch_size]).round())
-                for j, x in enumerate(optimizer.param_groups):
+                for j, x in enumerate(student_optimizer.param_groups):
                     # bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
                     x['lr'] = np.interp(ni, xi, [hyp['warmup_bias_lr'] if j == 2 else 0.0, x['initial_lr'] * lf(epoch)])
                     if 'momentum' in x:
@@ -357,12 +409,21 @@ def train(hyp, opt, device, tb_writer=None):
                     imgs = F.interpolate(imgs, size=ns, mode='bilinear', align_corners=False)
 
             # Forward
+            # 2024.08.22 @hslee : teacher forward
+            with torch.no_grad():
+                pred_teacher = teacher(imgs) # tuple
+
             with amp.autocast(enabled=cuda):
-                pred = model(imgs)  # forward
+                pred_student = student(imgs)  # forward
+
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
-                    loss, loss_items = compute_loss_ota(pred, targets.to(device), imgs)  # loss scaled by batch_size
+                    print(f"hyp['loss_ota'] : {hyp['loss_ota']}")
+                    print(f"call student_compute_loss_ota()")
+                    loss, loss_items = student_compute_loss_ota(pred_student, targets.to(device), imgs)  # loss scaled by batch_size
                 else:
-                    loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
+                    print(f"hyp['loss_ota'] : {hyp['loss_ota']}")
+                    print(f"call student_compute_loss()")
+                    loss, loss_items = student_compute_loss(pred_student, targets.to(device))  # loss scaled by batch_size
                 if rank != -1:
                     loss *= opt.world_size  # gradient averaged between devices in DDP mode
                 if opt.quad:
@@ -373,11 +434,11 @@ def train(hyp, opt, device, tb_writer=None):
 
             # Optimize
             if ni % accumulate == 0:
-                scaler.step(optimizer)  # optimizer.step
+                scaler.step(student_optimizer)  # student_optimizer.step
                 scaler.update()
-                optimizer.zero_grad()
+                student_optimizer.zero_grad()
                 if ema:
-                    ema.update(model)
+                    ema.update(student)
 
             # Print
             if rank in [-1, 0]:
@@ -385,6 +446,7 @@ def train(hyp, opt, device, tb_writer=None):
                 mem = '%.3gG' % (torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0)  # (GB)
                 s = ('%10s' * 2 + '%10.4g' * 6) % (
                     '%g/%g' % (epoch, epochs - 1), mem, *mloss, targets.shape[0], imgs.shape[-1])
+                
                 pbar.set_description(s)
 
                 # Plot
@@ -393,7 +455,7 @@ def train(hyp, opt, device, tb_writer=None):
                     Thread(target=plot_images, args=(imgs, targets, paths, f), daemon=True).start()
                     # if tb_writer:
                     #     tb_writer.add_image(f, result, dataformats='HWC', global_step=epoch)
-                    #     tb_writer.add_graph(torch.jit.trace(model, imgs, strict=False), [])  # add model graph
+                    #     tb_writer.add_graph(torch.jit.trace(student, imgs, strict=False), [])  # add student graph
                 elif plots and ni == 10 and wandb_logger.wandb:
                     wandb_logger.log({"Mosaics": [wandb_logger.wandb.Image(str(x), caption=x.name) for x in
                                                   save_dir.glob('train*.jpg') if x.exists()]})
@@ -402,7 +464,7 @@ def train(hyp, opt, device, tb_writer=None):
         # end epoch ----------------------------------------------------------------------------------------------------
 
         # Scheduler
-        lr = [x['lr'] for x in optimizer.param_groups]  # for tensorboard
+        lr = [x['lr'] for x in student_optimizer.param_groups]  # for tensorboard
         scheduler.step()
 
         # DDP process 0 or single-GPU
@@ -422,7 +484,7 @@ def train(hyp, opt, device, tb_writer=None):
                                                  verbose=nc < 50 and final_epoch,
                                                  plots=plots and final_epoch,
                                                  wandb_logger=wandb_logger,
-                                                 compute_loss=compute_loss,
+                                                 compute_loss=student_compute_loss,
                                                  is_coco=is_coco,
                                                  v5_metric=opt.v5_metric)
 
@@ -457,7 +519,7 @@ def train(hyp, opt, device, tb_writer=None):
                         'model': deepcopy(model.module if is_parallel(model) else model).half(),
                         'ema': deepcopy(ema.ema).half(),
                         'updates': ema.updates,
-                        'optimizer': optimizer.state_dict(),
+                        'optimizer': student_optimizer.state_dict(),
                         'wandb_id': wandb_logger.wandb_run.id if wandb_logger.wandb else None}
 
                 # Save last, best and delete
@@ -696,6 +758,7 @@ if __name__ == '__main__':
                 hyp[k] = round(hyp[k], 5)  # significant digits
 
             # Train mutation
+            # 2024.08.22 @hslee : main train function
             results = train(hyp.copy(), opt, device)
 
             # Write mutation results
@@ -727,8 +790,13 @@ python train.py --workers 4 --device 0 --batch-size 4 --epoch 100 \
     --data ../dataset/data.yaml --img 640 640 \
     --teacher-cfg cfg/training/yolov7x.yaml --teacher-weights '/home/hslee/YOLOv7_KD/yolov7/runs/train/coco_v7x_person_10000_finetuning/weights/best.pt' \
     --student-cfg cfg/training/yolov7-tiny.yaml --student-weights yolov7-tiny.pt \
+<<<<<<< HEAD
     --name KD_v7x_kd_v7tiny_person_10000_result --hyp coco_v7tiny_person_10000_train_result/hyp.yaml \
     2>&1 | tee ./test.txt
+=======
+    --name KD_v7x_to_v7tiny_person_10000_result --hyp coco_v7tiny_person_10000_finetuning_result/hyp.yaml \
+    2>&1 | tee test.txt
+>>>>>>> KD
     
     
 # result : baseline vs. student vs. teacher

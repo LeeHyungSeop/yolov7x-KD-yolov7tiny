@@ -454,6 +454,10 @@ class ComputeLoss:
 
         # Losses
         for i, pi in enumerate(p):  # layer index, layer predictions
+            
+            # 2024.08.22 @hslee
+            print(f"i = {i}")
+            print(f"pi.shape = {pi.shape}")
             b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
             tobj = torch.zeros_like(pi[..., 0], device=device)  # target obj
 
@@ -494,8 +498,11 @@ class ComputeLoss:
         lcls *= self.hyp['cls']
         bs = tobj.shape[0]  # batch size
 
-        loss = lbox + lobj + lcls
-        return loss * bs, torch.cat((lbox, lobj, lcls, loss)).detach()
+
+        # 2024.08.22 @hslee : Knowledge Distillation Loss
+        loss_kd = torch.zeros(1, device=device)
+        loss = lbox + lobj + lcls + loss_kd
+        return loss * bs, torch.cat((lbox, lobj, lcls, loss, loss_kd)).detach()
 
     def build_targets(self, p, targets):
         # Build targets for compute_loss(), input targets(image,class,x,y,w,h)
