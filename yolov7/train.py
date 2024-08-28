@@ -404,7 +404,7 @@ def train(hyp, opt, device, tb_writer=None):
                 pred_student, fpns_student, preds_student = student(imgs)  # forward
 
                 if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
-                    loss, loss_items = student_compute_loss_ota(pred_teacher,fpns_teacher, preds_teacher, pred_student,fpns_student, preds_student, targets.to(device), imgs)  # loss scaled by batch_size
+                    loss, loss_items = student_compute_loss_ota(pred_teacher, fpns_teacher, preds_teacher, pred_student,fpns_student, preds_student, targets.to(device), imgs)  # loss scaled by batch_size
                 else:
                     loss, loss_items = student_compute_loss(pred_teacher, pred_student, targets.to(device))  # loss scaled by batch_size
                 if rank != -1:
