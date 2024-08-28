@@ -562,6 +562,8 @@ if __name__ == '__main__':
     parser.add_argument('--artifact_alias', type=str, default="latest", help='version of dataset artifact to be used')
     parser.add_argument('--freeze', nargs='+', type=int, default=[0], help='Freeze layers: backbone of yolov7=50, first3=0 1 2')
     parser.add_argument('--v5-metric', action='store_true', help='assume maximum recall as 1.0 in AP calculation')
+
+    
     opt = parser.parse_args()
 
     # Set DDP variables
@@ -723,10 +725,10 @@ python train.py --workers 4 --device 0 --batch-size 4 --epoch 100 \
 # student : v7tiny(pretrained coco dataset) + fine-tuning with person 10,000 with teacher v7x's knowledge distillation
 python train.py --workers 4 --device 0 --batch-size 4 --epoch 100 \
     --data ../dataset/data.yaml --img 640 640 \
-    --teacher-cfg cfg/training/yolov7x.yaml --teacher-weights '' \
+    --teacher-cfg cfg/training/yolov7x.yaml --teacher-weights '/home/hslee/YOLOv7_KD/yolov7/runs/train/coco_v7x_person_10000_finetuning/weights/best.pt' \
     --student-cfg cfg/training/yolov7-tiny.yaml --student-weights yolov7-tiny.pt \
-    --name KD_v7x_to_v7tiny_person_10000_result --hyp coco_v7tiny_person_10000_train_result/hyp.yaml \
-    2>&1 | tee test.txt
+    --name KD_v7x_kd_v7tiny_person_10000_result --hyp coco_v7tiny_person_10000_train_result/hyp.yaml \
+    2>&1 | tee ./test.txt
     
     
 # result : baseline vs. student vs. teacher
