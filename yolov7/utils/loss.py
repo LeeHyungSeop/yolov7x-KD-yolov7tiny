@@ -586,15 +586,17 @@ class ComputeLossOTA:
         for k in 'na', 'nc', 'nl', 'anchors', 'stride':
             setattr(self, k, getattr(det, k))
 
-    def __call__(self, p, targets, imgs):  # predictions, targets, model   
+    def __call__(self, pred_teacher, pred_student, targets, imgs):  # predictions, targets, model   
         device = targets.device
-        lcls, lbox, lobj = torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
-        bs, as_, gjs, gis, targets, anchors = self.build_targets(p, targets, imgs)
-        pre_gen_gains = [torch.tensor(pp.shape, device=device)[[3, 2, 3, 2]] for pp in p] 
+        lcls, lbox, lobj, lkd = \
+            torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
+        bs, as_, gjs, gis, targets, anchors = self.build_targets(pred_student, targets, imgs)
+        pre_gen_gains = [torch.tensor(pp.shape, device=device)[[3, 2, 3, 2]] for pp in pred_student] 
     
 
         # Losses
-        for i, pi in enumerate(p):  # layer index, layer predictions
+        for i, pi in enumerate(pred_student):  # layer index, layer predictions
+            print(f"i = {i}, pi.shape = {pi.shape}")
             b, a, gj, gi = bs[i], as_[i], gjs[i], gis[i]  # image, anchor, gridy, gridx
             tobj = torch.zeros_like(pi[..., 0], device=device)  # target obj
 
@@ -623,6 +625,10 @@ class ComputeLossOTA:
                     t[range(n), selected_tcls] = self.cp
                     lcls += self.BCEcls(ps[:, 5:], t)  # BCE
 
+                # 2024.08.26 @hslee : Knowledge Distillation Loss
+                # KD Loss
+                
+
                 # Append targets to text file
                 # with open('targets.txt', 'a') as file:
                 #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
@@ -637,10 +643,11 @@ class ComputeLossOTA:
         lbox *= self.hyp['box']
         lobj *= self.hyp['obj']
         lcls *= self.hyp['cls']
+        lkd *= 1.0
         bs = tobj.shape[0]  # batch size
 
-        loss = lbox + lobj + lcls
-        return loss * bs, torch.cat((lbox, lobj, lcls, loss)).detach()
+        loss = lbox + lobj + lcls + lkd
+        return loss * bs, torch.cat((lbox, lobj, lcls, loss, lkd)).detach()
 
     def build_targets(self, p, targets, imgs):
         

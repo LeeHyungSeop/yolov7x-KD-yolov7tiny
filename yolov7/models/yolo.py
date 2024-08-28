@@ -74,6 +74,10 @@ class Detect(nn.Module):
         else:
             out = (torch.cat(z, 1), x)
 
+        # 2024.08.28 @hslee
+        print("Detect.forward")
+        for i in range(len(out)):
+            print(out[i].shape)
         return out
 
     @staticmethod
