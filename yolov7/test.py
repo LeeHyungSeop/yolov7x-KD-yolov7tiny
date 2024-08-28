@@ -367,5 +367,10 @@ python test.py --img 640 --batch 4 \
     --name yolov7x_640_val \
     2>&1 | tee ./test.txt
 
-
+# evaluation
+python test.py --device 0 --batch-size 4 --conf 0.001 --iou 0.65 \
+    --data ../dataset/data.yaml --img 640 \
+    --weights '/home/hslee/YOLOv7_KD/yolov7/runs/train/coco_v7tiny_person_10000_finetuning/weights/best.pt' \
+    --name coco_v7tiny_person_10000_finetuning_eval \
+    2>&1 | tee ./runs/test/log.txt
 '''

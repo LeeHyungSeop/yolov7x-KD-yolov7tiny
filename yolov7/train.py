@@ -723,14 +723,11 @@ python train.py --workers 4 --device 0 --batch-size 4 --epoch 100 \
 # student : v7tiny(pretrained coco dataset) + fine-tuning with person 10,000 with teacher v7x's knowledge distillation
 python train.py --workers 4 --device 0 --batch-size 4 --epoch 100 \
     --data ../dataset/data.yaml --img 640 640 \
-    --teacher-cfg cfg/training/yolov7x.yaml --teacher-weights yolov7x.pt \
+    --teacher-cfg cfg/training/yolov7x.yaml --teacher-weights '' \
     --student-cfg cfg/training/yolov7-tiny.yaml --student-weights yolov7-tiny.pt \
     --name KD_v7x_to_v7tiny_person_10000_result --hyp coco_v7tiny_person_10000_train_result/hyp.yaml \
     2>&1 | tee test.txt
     
-
-    --cfg 
-    --weights
     
 # result : baseline vs. student vs. teacher
 

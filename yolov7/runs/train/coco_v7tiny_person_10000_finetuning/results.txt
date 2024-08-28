@@ -1,4 +1,4 @@
-     Epoch   gpu mem train_box train_obj train_cls train_total  labels  img_size Precision    Recall  mAP0.5  mAP0.5:0.95  val_box   val_obj   val_cls
+     Epoch   gpu mem train_box train_obj train_cls train_total  labels  img_size Precision    Recall   mAP0.5  mAP0.5:0.95 val_box   val_obj   val_cls
       0/99    0.774G   0.05747   0.01277         0   0.07024        19       640    0.8448    0.6334    0.7471    0.4166   0.07167   0.01658         0
       1/99    0.755G   0.04676   0.01171         0   0.05848        54       640     0.815    0.6756    0.7582    0.4333   0.06947   0.01692         0
       2/99     1.49G   0.04602   0.01185         0   0.05786        23       640    0.7452    0.6195    0.6795    0.3625    0.0694   0.01938         0
