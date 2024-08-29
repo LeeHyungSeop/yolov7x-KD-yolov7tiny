@@ -767,22 +767,26 @@ if __name__ == '__main__':
               f'Command to train a new model with these hyperparameters: $ python train.py --hyp {yaml_file}')
 
 '''
-
 pip install -r requirements.txt
 
-# teacher : v7x(pretrained coco dataset = 53.1mAP) + fine-tuning with person 10,000
+
+# teacher = v7x(pretrained coco dataset = 53.1mAP) + fine-tuning with person 10,000
 python train.py --workers 4 --device 0 --batch-size 4 --epoch 100 \
     --data ../dataset/data.yaml --img 640 640 \
     --cfg cfg/training/yolov7x.yaml --weights yolov7x.pt \
     --name coco_v7x_person_10000_finetuning_result --hyp coco_v7x_person_10000_scratch_train_result/hyp.yaml
 
-# baseline : v7tiny(pretrained coco dataset) + fine-tuning with person 10,000
+    
+
+# student baseline = v7tiny(pretrained coco dataset) + fine-tuning with person 10,000
 python train.py --workers 4 --device 0 --batch-size 4 --epoch 100 \
     --data ../dataset/data.yaml --img 640 640 \
     --cfg cfg/training/yolov7-tiny.yaml --weights yolov7-tiny.pt \
     --name coco_v7tiny_person_10000_train_result --hyp coco_v7tiny_person_10000_train_result/hyp.yaml
     
-# student : v7tiny(pretrained coco dataset) + fine-tuning with person 10,000 with teacher v7x's knowledge distillation
+
+
+# student = v7tiny(pretrained coco dataset) + fine-tuning with person 10,000 with teacher v7x's knowledge distillation
 python train.py --workers 4 --device 0 --batch-size 4 --epoch 100 \
     --data ../dataset/data.yaml --img 640 640 \
     --teacher-cfg cfg/training/yolov7x.yaml --teacher-weights '/home/hslee/YOLOv7_KD/yolov7/runs/train/coco_v7x_person_10000_finetuning/weights/best.pt' \
@@ -791,7 +795,5 @@ python train.py --workers 4 --device 0 --batch-size 4 --epoch 100 \
     
     
     
-# result : baseline vs. student vs. teacher
-
-
+# result : baseline vs. student
 '''
