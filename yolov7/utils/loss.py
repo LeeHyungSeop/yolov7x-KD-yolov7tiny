@@ -490,6 +490,7 @@ def overall_loss_function(Pc_stu, Pc_tea, Fq_stu, Fq_tea):
     loss = (1 / (H * W)) * LossPFI
     return loss
 
+
 class ComputeLoss:
     # Compute losses
     def __init__(self, model, autobalance=False):

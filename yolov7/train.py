@@ -398,8 +398,7 @@ def train(hyp, opt, device, tb_writer=None):
             # Forward
             # 2024.08.22 @hslee : teacher forward
             with torch.no_grad():
-                pred_teacher, fpns_teacher, preds_teacher = teacher(imgs) # tuple
-
+                pred_teacher, fpns_teacher, preds_teacher = teacher(imgs)
             with amp.autocast(enabled=cuda):
                 pred_student, fpns_student, preds_student = student(imgs)  # forward
 
@@ -781,12 +780,8 @@ python train.py --workers 4 --device 0 --batch-size 4 --epoch 100 \
     --data ../dataset/data.yaml --img 640 640 \
     --teacher-cfg cfg/training/yolov7x.yaml --teacher-weights '/home/hslee/YOLOv7_KD/yolov7/runs/train/coco_v7x_person_10000_finetuning/weights/best.pt' \
     --student-cfg cfg/training/yolov7-tiny.yaml --student-weights yolov7-tiny.pt \
-<<<<<<< HEAD
-    --name KD_v7x_kd_v7tiny_person_10000_result --hyp coco_v7tiny_person_10000_train_result/hyp.yaml \
     2>&1 | tee ./test.txt
-=======
-    --name KD_v7x_to_v7tiny_person_10000_result --hyp coco_v7tiny_person_10000_finetuning_result/hyp.yaml \
-    2>&1 | tee ./test.txt
+    
     
     
 # result : baseline vs. student vs. teacher
