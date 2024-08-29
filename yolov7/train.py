@@ -580,6 +580,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', type=str, default='yolo7.pt', help='initial weights path')
     parser.add_argument('--cfg', type=str, default='', help='model.yaml path')
+
+    # 2024.08.22 @hslee : add teacher and student model arguments
+    parser.add_argument('--teacher-weights', type=str, default='yolov7x.pt', help='teacher weights path')
+    parser.add_argument('--student-weights', type=str, default='yolov7-tiny.pt', help='student weights path')
+    parser.add_argument('--teacher-cfg', type=str, default='cfg/training/yolov7x.yaml', help='teacher.yaml path')
+    parser.add_argument('--student-cfg', type=str, default='cfg/training/yolov7-tiny.yaml', help='student.yaml path')
+
     parser.add_argument('--data', type=str, default='data/coco.yaml', help='data.yaml path')
     parser.add_argument('--hyp', type=str, default='data/hyp.scratch.p5.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)
